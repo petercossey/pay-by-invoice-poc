@@ -143,6 +143,17 @@ Error (400):
 { "code": 400, "data": { "errMsg": "The invoice number already exists." }, "meta": { "message": "Bad Requests Error" } }
 ```
 
+### Invoice API — One-Invoice-Per-Order Constraint & Workaround
+
+The `POST /invoices` endpoint enforces a uniqueness constraint on `orderNumber` — creating a second invoice with the same `orderNumber` returns `400 — "The invoice exists for this order"`.
+
+**Workaround:** To create multiple invoices for a single order (e.g. deposit + balance), only the first invoice should set `orderNumber`. Additional invoices should omit `orderNumber` and instead set `externalId` to the order ID for the buyer's reference. This is the officially documented approach:
+
+- **Invoice 1 (deposit):** `orderNumber: "101"` — linked to the order in B2B Edition
+- **Invoice 2 (balance):** no `orderNumber`, `externalId: "101"` — references the order without triggering the uniqueness constraint
+
+Both invoices appear under the company when queried via `GET /invoices?customerId={companyId}`.
+
 ## 5. POC Flow
 
 ```

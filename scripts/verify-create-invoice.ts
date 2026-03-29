@@ -55,9 +55,9 @@ try {
   });
   const b2bResult = (await handleResponse(b2bRes, "B2B order")) as {
     code: number;
-    data: Array<Record<string, unknown>>;
+    data: Record<string, unknown> | Array<Record<string, unknown>>;
   };
-  const b2bOrder = b2bResult.data[0];
+  const b2bOrder = Array.isArray(b2bResult.data) ? b2bResult.data[0] : b2bResult.data;
   if (!b2bOrder) {
     throw new Error("No B2B order data returned");
   }
@@ -106,7 +106,8 @@ try {
     orderNumber: String(orderId),
     purchaseOrderNumber: (b2bOrder["poNumber"] as string) || undefined,
     customerId: String(companyId),
-    channelId: order["channel_id"] as number,
+    // channelId omitted — B2B API returns 404 "Store channels not exist" when
+    // the BC channel isn't registered in B2B Edition. Field is optional per docs.
     originalBalance: { code: currencyCode, value: totalIncTax },
     openBalance: { code: currencyCode, value: totalIncTax },
     details: {

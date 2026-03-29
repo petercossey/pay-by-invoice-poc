@@ -25,15 +25,15 @@ try {
   });
   const result = (await handleResponse(response, "B2B order")) as {
     code: number;
-    data: Array<Record<string, unknown>>;
+    data: Record<string, unknown> | Array<Record<string, unknown>>;
   };
 
   logSection("Full Response");
   console.log(JSON.stringify(result, null, 2));
 
-  const b2bOrder = result.data[0];
+  const b2bOrder = Array.isArray(result.data) ? result.data[0] : result.data;
   if (!b2bOrder) {
-    logError("No B2B order data returned (data array is empty)");
+    logError("No B2B order data returned");
     process.exit(1);
   }
 
