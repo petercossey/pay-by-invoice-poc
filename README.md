@@ -1,6 +1,6 @@
 # Pay by Invoice
 
-A CLI proof-of-concept for BigCommerce B2B Edition that creates deposit invoices for a percentage of an order's total.
+A CLI proof-of-concept for BigCommerce B2B Edition that creates deposit and balance invoices for B2B orders.
 
 ## Setup
 
@@ -10,7 +10,20 @@ A CLI proof-of-concept for BigCommerce B2B Edition that creates deposit invoices
 ## Usage
 
 ```bash
-bun src/index.ts <orderId>
+bun src/index.ts <orderId> [deposit] [balance]
+```
+
+- `bun src/index.ts 101` — creates a 50% deposit invoice (default)
+- `bun src/index.ts 101 deposit` — same as above
+- `bun src/index.ts 101 balance` — creates a 50% balance invoice
+- `bun src/index.ts 101 deposit balance` — creates both in sequence
+
+Deposit invoices use the order number as the identifier. Balance invoices use an `externalId` instead, since the B2B API requires unique order numbers across invoices.
+
+## Tests
+
+```bash
+bun test
 ```
 
 ## API Verification Scripts
