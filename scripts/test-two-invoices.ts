@@ -1,20 +1,16 @@
-// Test: Can we create two invoices (50% deposit + 50% balance) for a single order?
+// Test: Can we create two invoices for a single order?
 import {
-  getEnv,
-  getOrderId,
+  getConfig,
   V2_BASE,
   B2B_BASE,
   B2B_INVOICE_BASE,
   v2Headers,
   b2bHeaders,
-  logSection,
-  logSuccess,
-  logError,
-  logWarn,
   handleResponse,
-} from "./helpers.ts";
+} from "../src/api.ts";
+import { getOrderId, logSection, logSuccess, logError, logWarn } from "./log.ts";
 
-const { storeHash, authToken } = getEnv();
+const { storeHash, authToken } = getConfig();
 const orderId = getOrderId();
 const headers = b2bHeaders(authToken, storeHash);
 

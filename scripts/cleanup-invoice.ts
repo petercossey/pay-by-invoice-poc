@@ -1,16 +1,8 @@
 // Delete a test invoice by ID
-import {
-  getEnv,
-  getRequiredArg,
-  B2B_INVOICE_BASE,
-  b2bHeaders,
-  logSection,
-  logSuccess,
-  logError,
-  handleResponse,
-} from "./helpers.ts";
+import { getConfig, B2B_INVOICE_BASE, b2bHeaders, handleResponse } from "../src/api.ts";
+import { getRequiredArg, logSection, logSuccess, logError } from "./log.ts";
 
-const { storeHash, authToken } = getEnv();
+const { storeHash, authToken } = getConfig();
 const invoiceId = getRequiredArg("invoiceId");
 
 logSection(`Deleting Invoice #${invoiceId}`);

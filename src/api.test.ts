@@ -1,15 +1,15 @@
-import { describe, it, expect, beforeEach, spyOn } from "bun:test";
+import { describe, it, expect, spyOn } from "bun:test";
 import {
   getConfig,
   fetchBCOrder,
-  fetchBCOrderProducts,
   fetchB2BOrder,
+  fetchInvoicesForCompany,
   createInvoice,
   V2_BASE,
   B2B_BASE,
   B2B_INVOICE_BASE,
 } from "./api.ts";
-import type { Config, } from "./api.ts";
+import type { Config } from "./api.ts";
 import type { CreateInvoicePayload } from "./types.ts";
 
 const config: Config = {
@@ -93,23 +93,6 @@ describe("fetchBCOrder", () => {
   });
 });
 
-// --- fetchBCOrderProducts ---
-
-describe("fetchBCOrderProducts", () => {
-  it("calls the correct v2 products URL", async () => {
-    const productsData = [{ id: 1, sku: "TOY-001" }];
-    const spy = mockFetchResponse(productsData);
-
-    await fetchBCOrderProducts(101, config);
-
-    const [url] = spy.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      `${V2_BASE(config.storeHash)}/orders/101/products`,
-    );
-    spy.mockRestore();
-  });
-});
-
 // --- fetchB2BOrder ---
 
 describe("fetchB2BOrder", () => {
@@ -167,6 +150,59 @@ describe("fetchB2BOrder", () => {
 
     await expect(fetchB2BOrder(101, config)).rejects.toThrow(
       "No B2B order data",
+    );
+    spy.mockRestore();
+  });
+});
+
+// --- fetchInvoicesForCompany ---
+
+describe("fetchInvoicesForCompany", () => {
+  it("calls the correct invoice list URL with companyId", async () => {
+    const listData = {
+      code: 200,
+      data: [{ id: 1, invoiceNumber: "INV-101-001" }],
+      meta: { message: "Success" },
+    };
+    const spy = mockFetchResponse(listData);
+
+    await fetchInvoicesForCompany(11702148, config);
+
+    const [url, opts] = spy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${B2B_INVOICE_BASE}/invoices?customerId=11702148`);
+    expect((opts.headers as Record<string, string>)["X-Store-Hash"]).toBe(
+      "teststorehash",
+    );
+    spy.mockRestore();
+  });
+
+  it("returns the data array from the response", async () => {
+    const invoices = [
+      { id: 1, invoiceNumber: "INV-101-001" },
+      { id: 2, invoiceNumber: "INV-101-002" },
+    ];
+    const spy = mockFetchResponse({
+      code: 200,
+      data: invoices,
+      meta: { message: "Success" },
+    });
+
+    const result = await fetchInvoicesForCompany(11702148, config);
+    expect(result).toHaveLength(2);
+    expect(result[0].invoiceNumber).toBe("INV-101-001");
+    spy.mockRestore();
+  });
+
+  it("throws on non-OK response", async () => {
+    const spy = spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ code: 404, data: { errMsg: "Not found" } }),
+        { status: 404 },
+      ),
+    );
+
+    await expect(fetchInvoicesForCompany(999, config)).rejects.toThrow(
+      "HTTP 404",
     );
     spy.mockRestore();
   });

@@ -1,16 +1,8 @@
 // Verify GET /v2/orders/{id}
-import {
-  getEnv,
-  getOrderId,
-  V2_BASE,
-  v2Headers,
-  logSection,
-  logSuccess,
-  logError,
-  handleResponse,
-} from "./helpers.ts";
+import { getConfig, V2_BASE, v2Headers, handleResponse } from "../src/api.ts";
+import { getOrderId, logSection, logSuccess, logError } from "./log.ts";
 
-const { storeHash, authToken } = getEnv();
+const { storeHash, authToken } = getConfig();
 const orderId = getOrderId();
 
 logSection(`Fetching BC Order #${orderId} (v2 API)`);

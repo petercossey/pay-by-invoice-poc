@@ -1,6 +1,6 @@
 # Pay by Invoice
 
-A CLI proof-of-concept for BigCommerce B2B Edition that creates deposit and balance invoices for B2B orders.
+A CLI tool for BigCommerce B2B Edition that creates invoices for arbitrary amounts against B2B orders.
 
 ## Setup
 
@@ -10,15 +10,16 @@ A CLI proof-of-concept for BigCommerce B2B Edition that creates deposit and bala
 ## Usage
 
 ```bash
-bun src/index.ts <orderId> [deposit] [balance]
+bun src/index.ts <orderId> <amount> [--description "..."]
 ```
 
-- `bun src/index.ts 101` — creates a 50% deposit invoice (default)
-- `bun src/index.ts 101 deposit` — same as above
-- `bun src/index.ts 101 balance` — creates a 50% balance invoice
-- `bun src/index.ts 101 deposit balance` — creates both in sequence
+- `bun src/index.ts 101 283.25` — creates an invoice for $283.25 with auto-generated description
+- `bun src/index.ts 101 283.25 --description "50% deposit"` — custom description
+- `bun src/index.ts 101 200.00 --description "Progress payment"` — subsequent invoice (auto-detected)
 
-Deposit invoices use the order number as the identifier. Balance invoices use an `externalId` instead, since the B2B API requires unique order numbers across invoices.
+The tool auto-detects whether this is the first or a subsequent invoice for the order. The first invoice links to the order via `orderNumber`; subsequent invoices use `externalId` to avoid the B2B API's one-invoice-per-order constraint.
+
+Invoice numbers are auto-sequenced as `INV-{orderId}-001`, `INV-{orderId}-002`, etc.
 
 ## Tests
 
@@ -40,12 +41,12 @@ bun scripts/verify-v2-order-products.ts [orderId]
 # 3. Fetch B2B order — companyId, invoice status (B2B API)
 bun scripts/verify-b2b-order.ts [orderId]
 
-# 4. Full workflow — reads all 3 APIs then creates a real test invoice
+# 4. Full workflow — reads APIs then creates a real test invoice
 bun scripts/verify-create-invoice.ts [orderId]
 
 # 5. Delete a test invoice created by step 4
 bun scripts/cleanup-invoice.ts <invoiceId>
 
-# 6. Two-invoice workaround — creates deposit + balance invoices for one order
+# 6. Two-invoice test — creates two invoices for one order then cleans up
 bun scripts/test-two-invoices.ts [orderId]
 ```

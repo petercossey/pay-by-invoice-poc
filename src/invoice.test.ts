@@ -1,13 +1,10 @@
 import { describe, it, expect } from "bun:test";
 import {
   validateOrder,
+  determineInvoiceContext,
   buildInvoicePayload,
-  getPercentageForType,
-  getSequenceForType,
-  DEPOSIT_PERCENTAGE,
-  INVOICE_TYPE_CONFIG,
 } from "./invoice.ts";
-import type { BCOrder, BCOrderProduct, B2BOrder } from "./types.ts";
+import type { BCOrder, B2BOrder, InvoiceListItem } from "./types.ts";
 
 // --- Test fixtures ---
 
@@ -17,14 +14,7 @@ function makeBCOrder(overrides: Partial<BCOrder> = {}): BCOrder {
     status: "Completed",
     status_id: 10,
     total_inc_tax: "566.50",
-    total_ex_tax: "500.00",
-    total_tax: "66.50",
-    subtotal_inc_tax: "556.50",
-    shipping_cost_inc_tax: "10.00",
-    handling_cost_inc_tax: "0.00",
-    discount_amount: "0.00",
     currency_code: "USD",
-    channel_id: 1,
     billing_address: {
       first_name: "Jane",
       last_name: "Doe",
@@ -35,22 +25,6 @@ function makeBCOrder(overrides: Partial<BCOrder> = {}): BCOrder {
       zip: "78701",
       country: "United States",
     },
-    ...overrides,
-  };
-}
-
-function makeBCOrderProduct(
-  overrides: Partial<BCOrderProduct> = {},
-): BCOrderProduct {
-  return {
-    id: 1,
-    sku: "TOY-001",
-    name: "Toy Figure",
-    quantity: 5,
-    price_inc_tax: "113.30",
-    price_ex_tax: "100.00",
-    total_inc_tax: "566.50",
-    type: "physical",
     ...overrides,
   };
 }
@@ -72,29 +46,15 @@ function makeB2BOrder(overrides: Partial<B2BOrder> = {}): B2BOrder {
   };
 }
 
-// --- getPercentageForType ---
-
-describe("getPercentageForType", () => {
-  it("returns DEPOSIT_PERCENTAGE for deposit", () => {
-    expect(getPercentageForType("deposit")).toBe(DEPOSIT_PERCENTAGE);
-  });
-
-  it("returns 1 - DEPOSIT_PERCENTAGE for balance", () => {
-    expect(getPercentageForType("balance")).toBe(1 - DEPOSIT_PERCENTAGE);
-  });
-});
-
-// --- getSequenceForType ---
-
-describe("getSequenceForType", () => {
-  it("returns 1 for deposit", () => {
-    expect(getSequenceForType("deposit")).toBe(1);
-  });
-
-  it("returns 2 for balance", () => {
-    expect(getSequenceForType("balance")).toBe(2);
-  });
-});
+function makeInvoiceListItem(
+  overrides: Partial<InvoiceListItem> = {},
+): InvoiceListItem {
+  return {
+    id: 1,
+    invoiceNumber: "INV-101-001",
+    ...overrides,
+  };
+}
 
 // --- validateOrder ---
 
@@ -109,89 +69,142 @@ describe("validateOrder", () => {
     expect(() => validateOrder(order, 101)).toThrow("not a B2B order");
   });
 
-  it("throws when invoiceId already exists (deposit)", () => {
-    const order = makeB2BOrder({ invoiceId: 999, invoiceNumber: 12345 });
-    expect(() => validateOrder(order, 101, "deposit")).toThrow(
-      "already has invoice",
-    );
-  });
-
   it("passes for a valid order with no invoice", () => {
     const order = makeB2BOrder();
     expect(() => validateOrder(order, 101)).not.toThrow();
   });
 
-  it("passes when invoiceId is 0 (no invoice)", () => {
-    const order = makeB2BOrder({ invoiceId: 0 });
-    expect(() => validateOrder(order, 101)).not.toThrow();
-  });
-
-  it("allows existing invoice for balance type", () => {
+  it("passes when order already has an invoice (no longer blocked)", () => {
     const order = makeB2BOrder({ invoiceId: 999, invoiceNumber: 12345 });
-    expect(() => validateOrder(order, 101, "balance")).not.toThrow();
-  });
-
-  it("still rejects missing companyId for balance type", () => {
-    const order = makeB2BOrder({ companyId: 0 });
-    expect(() => validateOrder(order, 101, "balance")).toThrow(
-      "not a B2B order",
-    );
+    expect(() => validateOrder(order, 101)).not.toThrow();
   });
 });
 
-// --- buildInvoicePayload (default / deposit) ---
+// --- determineInvoiceContext ---
+
+describe("determineInvoiceContext", () => {
+  it("detects first invoice when invoiceId is null", () => {
+    const b2bOrder = makeB2BOrder({ invoiceId: null });
+    const result = determineInvoiceContext(b2bOrder, [], 101);
+    expect(result.isFirstInvoice).toBe(true);
+    expect(result.sequenceNumber).toBe(1);
+  });
+
+  it("detects first invoice when invoiceId is 0", () => {
+    const b2bOrder = makeB2BOrder({ invoiceId: 0 });
+    const result = determineInvoiceContext(b2bOrder, [], 101);
+    expect(result.isFirstInvoice).toBe(true);
+  });
+
+  it("detects subsequent invoice when invoiceId is set", () => {
+    const b2bOrder = makeB2BOrder({ invoiceId: 999 });
+    const result = determineInvoiceContext(b2bOrder, [], 101);
+    expect(result.isFirstInvoice).toBe(false);
+  });
+
+  it("returns sequenceNumber 1 when no existing invoices match", () => {
+    const b2bOrder = makeB2BOrder();
+    const result = determineInvoiceContext(b2bOrder, [], 101);
+    expect(result.sequenceNumber).toBe(1);
+  });
+
+  it("returns sequenceNumber 2 when one existing invoice matches", () => {
+    const b2bOrder = makeB2BOrder({ invoiceId: 999 });
+    const existing = [makeInvoiceListItem({ invoiceNumber: "INV-101-001" })];
+    const result = determineInvoiceContext(b2bOrder, existing, 101);
+    expect(result.sequenceNumber).toBe(2);
+  });
+
+  it("returns sequenceNumber 3 when two existing invoices match", () => {
+    const b2bOrder = makeB2BOrder({ invoiceId: 999 });
+    const existing = [
+      makeInvoiceListItem({ invoiceNumber: "INV-101-001" }),
+      makeInvoiceListItem({ invoiceNumber: "INV-101-002" }),
+    ];
+    const result = determineInvoiceContext(b2bOrder, existing, 101);
+    expect(result.sequenceNumber).toBe(3);
+  });
+
+  it("ignores invoices for other orders", () => {
+    const b2bOrder = makeB2BOrder({ invoiceId: 999 });
+    const existing = [
+      makeInvoiceListItem({ invoiceNumber: "INV-101-001" }),
+      makeInvoiceListItem({ invoiceNumber: "INV-200-001" }),
+      makeInvoiceListItem({ invoiceNumber: "INV-300-001" }),
+    ];
+    const result = determineInvoiceContext(b2bOrder, existing, 101);
+    expect(result.sequenceNumber).toBe(2);
+  });
+});
+
+// --- buildInvoicePayload ---
 
 describe("buildInvoicePayload", () => {
   const bcOrder = makeBCOrder();
-  const products = [makeBCOrderProduct()];
   const b2bOrder = makeB2BOrder();
+  const defaultOptions = {
+    amount: 283.25,
+    description: "50% deposit",
+    sequenceNumber: 1,
+    isFirstInvoice: true,
+  };
 
-  it("calculates deposit as 50% of total_inc_tax", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
-    const expected = 566.5 * DEPOSIT_PERCENTAGE;
-    expect(payload.originalBalance.value).toBe(expected);
-  });
-
-  it("sets originalBalance and openBalance to the same deposit amount", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
-    expect(payload.originalBalance.value).toBe(payload.openBalance.value);
-    expect(payload.originalBalance.code).toBe(payload.openBalance.code);
-  });
-
-  it("scales line item unit prices by deposit percentage", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
-    const item = payload.details.details.lineItems[0];
-    const expectedPrice = parseFloat("113.30") * DEPOSIT_PERCENTAGE;
-    expect(item.unitPrice.value).toBe(String(expectedPrice));
-  });
-
-  it("scales cost lines by deposit percentage", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
-    const costLines = payload.details.header.costLines;
-
-    const subtotal = costLines.find((c) => c.description === "Subtotal");
-    expect(subtotal?.amount.value).toBe(
-      String(parseFloat("556.50") * DEPOSIT_PERCENTAGE),
-    );
-
-    const freight = costLines.find((c) => c.description === "Freight");
-    expect(freight?.amount.value).toBe(
-      String(parseFloat("10.00") * DEPOSIT_PERCENTAGE),
-    );
-
-    const tax = costLines.find((c) => c.description === "Sales Tax");
-    expect(tax?.amount.value).toBe(
-      String(parseFloat("66.50") * DEPOSIT_PERCENTAGE),
-    );
+  it("sets originalBalance and openBalance to the given amount", () => {
+    const payload = buildInvoicePayload(bcOrder, b2bOrder, defaultOptions);
+    expect(payload.originalBalance.value).toBe(283.25);
+    expect(payload.openBalance.value).toBe(283.25);
+    expect(payload.originalBalance.code).toBe("USD");
   });
 
   it("formats invoice number as INV-{orderId}-001", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
+    const payload = buildInvoicePayload(bcOrder, b2bOrder, defaultOptions);
     expect(payload.invoiceNumber).toBe("INV-101-001");
   });
 
+  it("formats invoice number with correct sequence", () => {
+    const payload = buildInvoicePayload(bcOrder, b2bOrder, {
+      ...defaultOptions,
+      sequenceNumber: 3,
+    });
+    expect(payload.invoiceNumber).toBe("INV-101-003");
+  });
+
+  it("creates a single line item with sku INV", () => {
+    const payload = buildInvoicePayload(bcOrder, b2bOrder, defaultOptions);
+    const items = payload.details.details.lineItems;
+    expect(items).toHaveLength(1);
+    expect(items[0].sku).toBe("INV");
+    expect(items[0].quantity).toBe("1");
+    expect(items[0].unitPrice.value).toBe("283.25");
+    expect(items[0].description).toBe("50% deposit");
+  });
+
+  it("creates a single Total cost line", () => {
+    const payload = buildInvoicePayload(bcOrder, b2bOrder, defaultOptions);
+    const costLines = payload.details.header.costLines;
+    expect(costLines).toHaveLength(1);
+    expect(costLines[0].description).toBe("Total");
+    expect(costLines[0].amount.value).toBe("283.25");
+  });
+
+  it("uses orderNumber for first invoice", () => {
+    const payload = buildInvoicePayload(bcOrder, b2bOrder, defaultOptions);
+    expect(payload.orderNumber).toBe("101");
+    expect(payload.externalId).toBeUndefined();
+  });
+
+  it("uses externalId for subsequent invoices", () => {
+    const payload = buildInvoicePayload(bcOrder, b2bOrder, {
+      ...defaultOptions,
+      isFirstInvoice: false,
+      sequenceNumber: 2,
+    });
+    expect(payload.externalId).toBe("ORD-101");
+    expect(payload.orderNumber).toBeUndefined();
+  });
+
   it("maps billing address fields correctly", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
+    const payload = buildInvoicePayload(bcOrder, b2bOrder, defaultOptions);
     const addr = payload.details.header.billingAddress;
     expect(addr.firstName).toBe("Jane");
     expect(addr.lastName).toBe("Doe");
@@ -204,194 +217,41 @@ describe("buildInvoicePayload", () => {
   });
 
   it("does not include channelId in the payload", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
+    const payload = buildInvoicePayload(bcOrder, b2bOrder, defaultOptions);
     expect("channelId" in payload).toBe(false);
   });
 
+  it("sets type to Invoice", () => {
+    const payload = buildInvoicePayload(bcOrder, b2bOrder, defaultOptions);
+    expect(payload.type).toBe("Invoice");
+  });
+
   it("sets source to 1 (external)", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
+    const payload = buildInvoicePayload(bcOrder, b2bOrder, defaultOptions);
     expect(payload.source).toBe(1);
   });
 
   it("sets status to 0 (Open)", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
+    const payload = buildInvoicePayload(bcOrder, b2bOrder, defaultOptions);
     expect(payload.status).toBe(0);
   });
 
   it("includes purchaseOrderNumber when present", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
+    const payload = buildInvoicePayload(bcOrder, b2bOrder, defaultOptions);
     expect(payload.purchaseOrderNumber).toBe("PO-2024-001");
   });
 
   it("omits purchaseOrderNumber when empty", () => {
     const order = makeB2BOrder({ poNumber: "" });
-    const payload = buildInvoicePayload(bcOrder, products, order);
+    const payload = buildInvoicePayload(bcOrder, order, defaultOptions);
     expect(payload.purchaseOrderNumber).toBeUndefined();
-  });
-
-  it("preserves line item quantity as string", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
-    const item = payload.details.details.lineItems[0];
-    expect(item.quantity).toBe("5");
   });
 
   it("uses currency_code from the BC order", () => {
     const order = makeBCOrder({ currency_code: "CAD" });
-    const payload = buildInvoicePayload(order, products, b2bOrder);
+    const payload = buildInvoicePayload(order, b2bOrder, defaultOptions);
     expect(payload.originalBalance.code).toBe("CAD");
     expect(payload.details.details.lineItems[0].unitPrice.code).toBe("CAD");
-  });
-
-  it("sets type to 'Deposit Invoice' by default", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
-    expect(payload.type).toBe("Deposit Invoice");
-  });
-
-  it("includes termsConditions for deposit", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
-    expect(payload.termsConditions).toBe(
-      INVOICE_TYPE_CONFIG.deposit.termsConditions,
-    );
-  });
-
-  it("prefixes line item descriptions with [50% Deposit]", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
-    const item = payload.details.details.lineItems[0];
-    expect(item.description).toBe("[50% Deposit] Toy Figure");
-  });
-
-  it("adds comments to line items", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
-    const item = payload.details.details.lineItems[0];
-    expect(item.comments).toBe("50% deposit payment");
-  });
-
-  it("uses orderNumber for deposit invoices", () => {
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder);
-    expect(payload.orderNumber).toBe("101");
-    expect(payload.externalId).toBeUndefined();
-  });
-});
-
-// --- buildInvoicePayload (balance) ---
-
-describe("buildInvoicePayload (balance)", () => {
-  const bcOrder = makeBCOrder();
-  const products = [makeBCOrderProduct()];
-  const b2bOrder = makeB2BOrder();
-  const balanceOptions = { type: "balance" as const, sequenceNumber: 2 };
-
-  it("calculates balance as 50% of total_inc_tax", () => {
-    const payload = buildInvoicePayload(
-      bcOrder,
-      products,
-      b2bOrder,
-      balanceOptions,
-    );
-    const expected = 566.5 * (1 - DEPOSIT_PERCENTAGE);
-    expect(payload.originalBalance.value).toBe(expected);
-  });
-
-  it("formats invoice number as INV-{orderId}-002", () => {
-    const payload = buildInvoicePayload(
-      bcOrder,
-      products,
-      b2bOrder,
-      balanceOptions,
-    );
-    expect(payload.invoiceNumber).toBe("INV-101-002");
-  });
-
-  it("sets type to 'Balance Invoice'", () => {
-    const payload = buildInvoicePayload(
-      bcOrder,
-      products,
-      b2bOrder,
-      balanceOptions,
-    );
-    expect(payload.type).toBe("Balance Invoice");
-  });
-
-  it("uses externalId instead of orderNumber", () => {
-    const payload = buildInvoicePayload(
-      bcOrder,
-      products,
-      b2bOrder,
-      balanceOptions,
-    );
-    expect(payload.externalId).toBe("ORD-101-BAL");
-    expect(payload.orderNumber).toBeUndefined();
-  });
-
-  it("includes termsConditions for balance", () => {
-    const payload = buildInvoicePayload(
-      bcOrder,
-      products,
-      b2bOrder,
-      balanceOptions,
-    );
-    expect(payload.termsConditions).toBe(
-      INVOICE_TYPE_CONFIG.balance.termsConditions,
-    );
-  });
-
-  it("prefixes line item descriptions with [Balance]", () => {
-    const payload = buildInvoicePayload(
-      bcOrder,
-      products,
-      b2bOrder,
-      balanceOptions,
-    );
-    const item = payload.details.details.lineItems[0];
-    expect(item.description).toBe("[Balance] Toy Figure");
-  });
-
-  it("adds balance comments to line items", () => {
-    const payload = buildInvoicePayload(
-      bcOrder,
-      products,
-      b2bOrder,
-      balanceOptions,
-    );
-    const item = payload.details.details.lineItems[0];
-    expect(item.comments).toBe("Remaining 50% balance");
-  });
-
-  it("scales line item unit prices by balance percentage", () => {
-    const payload = buildInvoicePayload(
-      bcOrder,
-      products,
-      b2bOrder,
-      balanceOptions,
-    );
-    const item = payload.details.details.lineItems[0];
-    const expectedPrice = parseFloat("113.30") * (1 - DEPOSIT_PERCENTAGE);
-    expect(item.unitPrice.value).toBe(String(expectedPrice));
-  });
-
-  it("scales cost lines by balance percentage", () => {
-    const payload = buildInvoicePayload(
-      bcOrder,
-      products,
-      b2bOrder,
-      balanceOptions,
-    );
-    const costLines = payload.details.header.costLines;
-    const balancePct = 1 - DEPOSIT_PERCENTAGE;
-
-    const subtotal = costLines.find((c) => c.description === "Subtotal");
-    expect(subtotal?.amount.value).toBe(
-      String(parseFloat("556.50") * balancePct),
-    );
-
-    const freight = costLines.find((c) => c.description === "Freight");
-    expect(freight?.amount.value).toBe(
-      String(parseFloat("10.00") * balancePct),
-    );
-
-    const tax = costLines.find((c) => c.description === "Sales Tax");
-    expect(tax?.amount.value).toBe(
-      String(parseFloat("66.50") * balancePct),
-    );
+    expect(payload.details.header.costLines[0].amount.code).toBe("CAD");
   });
 });

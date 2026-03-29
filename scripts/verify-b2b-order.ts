@@ -1,17 +1,8 @@
 // Verify GET /orders/{bcOrderId} (B2B Edition)
-import {
-  getEnv,
-  getOrderId,
-  B2B_BASE,
-  b2bHeaders,
-  logSection,
-  logSuccess,
-  logError,
-  logWarn,
-  handleResponse,
-} from "./helpers.ts";
+import { getConfig, B2B_BASE, b2bHeaders, handleResponse } from "../src/api.ts";
+import { getOrderId, logSection, logSuccess, logError, logWarn } from "./log.ts";
 
-const { storeHash, authToken } = getEnv();
+const { storeHash, authToken } = getConfig();
 const orderId = getOrderId();
 
 logSection(`Fetching B2B Order for BC Order #${orderId}`);

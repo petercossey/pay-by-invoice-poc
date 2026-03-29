@@ -1,92 +1,86 @@
 // CLI entry point — arg parsing, orchestration, console output
 
-import { getConfig, fetchBCOrder, fetchBCOrderProducts, fetchB2BOrder, createInvoice } from "./api.ts";
-import { validateOrder, buildInvoicePayload, getPercentageForType, getSequenceForType, INVOICE_TYPE_CONFIG } from "./invoice.ts";
-import type { InvoiceType } from "./types.ts";
+import { getConfig, fetchBCOrder, fetchB2BOrder, fetchInvoicesForCompany, createInvoice } from "./api.ts";
+import { validateOrder, determineInvoiceContext, buildInvoicePayload } from "./invoice.ts";
 
-const VALID_TYPES: InvoiceType[] = ["deposit", "balance"];
+function parseArgs(): { orderId: number; amount: number; description?: string } {
+  const args = process.argv.slice(2);
 
-function parseArgs(): { orderId: number; invoiceTypes: InvoiceType[] } {
-  const arg = process.argv[2];
-  if (!arg) {
-    console.error("Usage: bun src/index.ts <orderId> [deposit] [balance]");
+  if (args.length < 2) {
+    console.error('Usage: bun src/index.ts <orderId> <amount> [--description "..."]');
     process.exit(1);
   }
-  const orderId = parseInt(arg, 10);
+
+  const orderId = parseInt(args[0], 10);
   if (isNaN(orderId)) {
-    console.error(`Invalid order ID: ${arg}`);
+    console.error(`Invalid order ID: ${args[0]}`);
     process.exit(1);
   }
 
-  // Parse invoice types from remaining args, default to ["deposit"]
-  const typeArgs = process.argv.slice(3).map((a) => a.toLowerCase());
-  const invoiceTypes: InvoiceType[] = typeArgs.length > 0
-    ? typeArgs.filter((t): t is InvoiceType => VALID_TYPES.includes(t as InvoiceType))
-    : ["deposit"];
-
-  if (invoiceTypes.length === 0) {
-    console.error(`Invalid invoice type(s). Valid types: ${VALID_TYPES.join(", ")}`);
+  const amount = parseFloat(args[1]);
+  if (isNaN(amount) || amount <= 0) {
+    console.error(`Invalid amount: ${args[1]} (must be a positive number)`);
     process.exit(1);
   }
 
-  return { orderId, invoiceTypes };
+  let description: string | undefined;
+  const descIdx = args.indexOf("--description");
+  if (descIdx !== -1 && args[descIdx + 1]) {
+    description = args[descIdx + 1];
+  }
+
+  return { orderId, amount, description };
 }
 
 async function main() {
-  const { orderId, invoiceTypes } = parseArgs();
+  const { orderId, amount, description } = parseArgs();
   const config = getConfig();
 
-  const typeLabels = invoiceTypes.map((t) => INVOICE_TYPE_CONFIG[t].type).join(" + ");
-  console.log(`\nCreating ${typeLabels} for order #${orderId}...\n`);
+  console.log(`\nCreating invoice for order #${orderId} — $${amount}...\n`);
 
-  // Fetch order data once (shared across invoice types)
-  console.log("Fetching BC order...");
-  const bcOrder = await fetchBCOrder(orderId, config);
+  // Fetch order data in parallel (no product fetch needed)
+  console.log("Fetching order data...");
+  const [bcOrder, b2bOrder] = await Promise.all([
+    fetchBCOrder(orderId, config),
+    fetchB2BOrder(orderId, config),
+  ]);
   console.log(`  total_inc_tax: ${bcOrder.total_inc_tax} ${bcOrder.currency_code}`);
-
-  console.log("Fetching BC order products...");
-  const products = await fetchBCOrderProducts(orderId, config);
-  console.log(`  ${products.length} product(s)`);
-
-  console.log("Fetching B2B order...");
-  const b2bOrder = await fetchB2BOrder(orderId, config);
   console.log(`  companyId: ${b2bOrder.companyId}`);
 
-  // Process each invoice type in sequence
-  const results: Array<{ type: InvoiceType; invoiceId: number; invoiceNumber: string; amount: number; currency: string }> = [];
+  // Validate
+  validateOrder(b2bOrder, orderId);
 
-  for (const invoiceType of invoiceTypes) {
-    const percentage = getPercentageForType(invoiceType);
-    const sequenceNumber = getSequenceForType(invoiceType);
-    const config_label = INVOICE_TYPE_CONFIG[invoiceType];
+  // Determine first vs subsequent + sequence number
+  console.log("Checking existing invoices...");
+  const existingInvoices = await fetchInvoicesForCompany(b2bOrder.companyId, config);
+  const { isFirstInvoice, sequenceNumber } = determineInvoiceContext(b2bOrder, existingInvoices, orderId);
 
-    console.log(`\n--- ${config_label.type} (${percentage * 100}%) ---`);
+  const label = isFirstInvoice ? "first invoice" : `invoice #${sequenceNumber}`;
+  console.log(`  This will be the ${label}`);
 
-    // Validate
-    validateOrder(b2bOrder, orderId, invoiceType);
+  // Default description
+  const invoiceDescription = description ??
+    (isFirstInvoice ? `Deposit for Order #${orderId}` : `Payment for Order #${orderId}`);
 
-    // Build and create invoice
-    const payload = buildInvoicePayload(bcOrder, products, b2bOrder, { type: invoiceType, sequenceNumber });
-    console.log(`Creating invoice ${payload.invoiceNumber}...`);
-    console.log(`  Amount: ${payload.originalBalance.value} ${payload.originalBalance.code}`);
+  // Build and create
+  const payload = buildInvoicePayload(bcOrder, b2bOrder, {
+    amount,
+    description: invoiceDescription,
+    sequenceNumber,
+    isFirstInvoice,
+  });
 
-    const result = await createInvoice(payload, config);
+  console.log(`\nCreating invoice ${payload.invoiceNumber}...`);
+  console.log(`  Amount: ${payload.originalBalance.value} ${payload.originalBalance.code}`);
+  console.log(`  Description: ${invoiceDescription}`);
 
-    console.log(`  Created! Invoice ID: ${result.data.id}`);
-    results.push({
-      type: invoiceType,
-      invoiceId: result.data.id,
-      invoiceNumber: payload.invoiceNumber,
-      amount: payload.originalBalance.value,
-      currency: payload.originalBalance.code,
-    });
-  }
+  const result = await createInvoice(payload, config);
 
-  // Summary
-  console.log(`\n=== Summary ===`);
-  for (const r of results) {
-    console.log(`  ${INVOICE_TYPE_CONFIG[r.type].type}: ${r.invoiceNumber} — ${r.amount} ${r.currency} (ID: ${r.invoiceId})`);
-  }
+  console.log(`\n=== Created ===`);
+  console.log(`  Invoice ID: ${result.data.id}`);
+  console.log(`  Invoice Number: ${payload.invoiceNumber}`);
+  console.log(`  Amount: ${amount} ${bcOrder.currency_code}`);
+  console.log(`  Description: ${invoiceDescription}`);
   console.log();
 }
 

@@ -2,11 +2,12 @@
 
 import type {
   BCOrder,
-  BCOrderProduct,
   B2BOrder,
   B2BApiResponse,
   CreateInvoicePayload,
   InvoiceResponse,
+  InvoiceListResponse,
+  InvoiceListItem,
 } from "./types.ts";
 
 // --- Config ---
@@ -38,7 +39,7 @@ export const B2B_INVOICE_BASE =
 
 // --- Header factories ---
 
-function v2Headers(token: string): Record<string, string> {
+export function v2Headers(token: string): Record<string, string> {
   return {
     "X-Auth-Token": token,
     Accept: "application/json",
@@ -46,7 +47,7 @@ function v2Headers(token: string): Record<string, string> {
   };
 }
 
-function b2bHeaders(
+export function b2bHeaders(
   token: string,
   storeHash: string,
 ): Record<string, string> {
@@ -59,7 +60,7 @@ function b2bHeaders(
 
 // --- Error handling ---
 
-async function handleResponse(
+export async function handleResponse(
   response: Response,
   label: string,
 ): Promise<unknown> {
@@ -95,15 +96,6 @@ export async function fetchBCOrder(
   return (await handleResponse(res, "v2 order")) as BCOrder;
 }
 
-export async function fetchBCOrderProducts(
-  orderId: number,
-  config: Config,
-): Promise<BCOrderProduct[]> {
-  const url = `${V2_BASE(config.storeHash)}/orders/${orderId}/products`;
-  const res = await fetch(url, { headers: v2Headers(config.authToken) });
-  return (await handleResponse(res, "v2 order products")) as BCOrderProduct[];
-}
-
 export async function fetchB2BOrder(
   orderId: number,
   config: Config,
@@ -123,6 +115,21 @@ export async function fetchB2BOrder(
     throw new Error("No B2B order data returned");
   }
   return order;
+}
+
+export async function fetchInvoicesForCompany(
+  companyId: number,
+  config: Config,
+): Promise<InvoiceListItem[]> {
+  const url = `${B2B_INVOICE_BASE}/invoices?customerId=${companyId}`;
+  const res = await fetch(url, {
+    headers: b2bHeaders(config.authToken, config.storeHash),
+  });
+  const result = (await handleResponse(
+    res,
+    "list invoices",
+  )) as InvoiceListResponse;
+  return result.data;
 }
 
 export async function createInvoice(

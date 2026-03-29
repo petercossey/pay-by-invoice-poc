@@ -1,20 +1,16 @@
-// Verify POST /invoices — chains all 3 read APIs then creates an invoice
+// Verify POST /invoices — chains all read APIs then creates an invoice
 import {
-  getEnv,
-  getOrderId,
+  getConfig,
   V2_BASE,
   B2B_BASE,
   B2B_INVOICE_BASE,
   v2Headers,
   b2bHeaders,
-  logSection,
-  logSuccess,
-  logError,
-  logWarn,
   handleResponse,
-} from "./helpers.ts";
+} from "../src/api.ts";
+import { getOrderId, logSection, logSuccess, logError, logWarn } from "./log.ts";
 
-const { storeHash, authToken } = getEnv();
+const { storeHash, authToken } = getConfig();
 const orderId = getOrderId();
 
 logSection(`Creating Test Invoice for BC Order #${orderId}`);
@@ -33,21 +29,8 @@ try {
     `Order #${order["id"]}: total_inc_tax=${order["total_inc_tax"]}, currency=${order["currency_code"]}`,
   );
 
-  // Step 2: Fetch BC order products (v2)
-  logSection("Step 2: Fetch BC Order Products (v2)");
-  const productsUrl = `${V2_BASE(storeHash)}/orders/${orderId}/products`;
-  console.log(`GET ${productsUrl}`);
-  const productsRes = await fetch(productsUrl, {
-    headers: v2Headers(authToken),
-  });
-  const products = (await handleResponse(
-    productsRes,
-    "v2 order products",
-  )) as Array<Record<string, unknown>>;
-  logSuccess(`Found ${products.length} product(s)`);
-
-  // Step 3: Fetch B2B order
-  logSection("Step 3: Fetch B2B Order");
+  // Step 2: Fetch B2B order
+  logSection("Step 2: Fetch B2B Order");
   const b2bUrl = `${B2B_BASE}/orders/${orderId}`;
   console.log(`GET ${b2bUrl}`);
   const b2bRes = await fetch(b2bUrl, {
@@ -65,8 +48,8 @@ try {
     `B2B order: companyId=${b2bOrder["companyId"]}, poNumber=${b2bOrder["poNumber"]}`,
   );
 
-  // Step 4: Validate
-  logSection("Step 4: Validate");
+  // Step 3: Validate
+  logSection("Step 3: Validate");
   const companyId = b2bOrder["companyId"] as number;
   if (!companyId || companyId === 0) {
     throw new Error(
@@ -89,8 +72,8 @@ try {
     logSuccess("No existing invoice on this order");
   }
 
-  // Step 5: Build invoice payload
-  logSection("Step 5: Build Invoice Payload");
+  // Step 4: Build invoice payload
+  logSection("Step 4: Build Invoice Payload");
   const currencyCode = (order["currency_code"] as string) || "USD";
   const totalIncTax = parseFloat(order["total_inc_tax"] as string);
   const timestamp = Date.now();
@@ -106,42 +89,14 @@ try {
     orderNumber: String(orderId),
     purchaseOrderNumber: (b2bOrder["poNumber"] as string) || undefined,
     customerId: String(companyId),
-    // channelId omitted — B2B API returns 404 "Store channels not exist" when
-    // the BC channel isn't registered in B2B Edition. Field is optional per docs.
     originalBalance: { code: currencyCode, value: totalIncTax },
     openBalance: { code: currencyCode, value: totalIncTax },
     details: {
       header: {
         costLines: [
           {
-            amount: {
-              code: currencyCode,
-              value: String(order["subtotal_inc_tax"] ?? "0"),
-            },
-            description: "Subtotal",
-          },
-          {
-            amount: {
-              code: currencyCode,
-              value: String(order["shipping_cost_inc_tax"] ?? "0"),
-            },
-            description: "Freight",
-          },
-          {
-            amount: {
-              code: currencyCode,
-              value: String(order["total_tax"] ?? "0"),
-            },
-            description: "Sales Tax",
-          },
-          {
-            amount: {
-              code: currencyCode,
-              value: String(
-                -(parseFloat((order["discount_amount"] as string) || "0")),
-              ),
-            },
-            description: "Discount",
+            amount: { code: currencyCode, value: String(totalIncTax) },
+            description: "Total",
           },
         ],
         billingAddress: {
@@ -157,16 +112,15 @@ try {
         shippingAddresses: [],
       },
       details: {
-        lineItems: products.map((p) => ({
-          sku: (p["sku"] as string) || "UNKNOWN",
-          quantity: String(p["quantity"] ?? 1),
-          unitPrice: {
-            code: currencyCode,
-            value: String(p["price_inc_tax"] ?? "0"),
+        lineItems: [
+          {
+            sku: "INV",
+            quantity: "1",
+            unitPrice: { code: currencyCode, value: String(totalIncTax) },
+            description: `Test invoice for Order #${orderId}`,
+            type: "physical",
           },
-          description: (p["name"] as string) || "",
-          type: (p["type"] as string) || "physical",
-        })),
+        ],
       },
     },
   };
@@ -179,8 +133,8 @@ try {
   logSection("Invoice Payload");
   console.log(JSON.stringify(payload, null, 2));
 
-  // Step 6: Create the invoice
-  logSection("Step 6: Create Invoice");
+  // Step 5: Create the invoice
+  logSection("Step 5: Create Invoice");
   const invoiceUrl = `${B2B_INVOICE_BASE}/invoices`;
   console.log(`POST ${invoiceUrl}\n`);
 
