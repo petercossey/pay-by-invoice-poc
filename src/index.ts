@@ -53,7 +53,7 @@ async function main() {
   // Determine first vs subsequent + sequence number
   console.log("Checking existing invoices...");
   const existingInvoices = await fetchInvoicesForCompany(b2bOrder.companyId, config);
-  const { isFirstInvoice, sequenceNumber } = determineInvoiceContext(b2bOrder, existingInvoices, orderId);
+  const { isFirstInvoice, sequenceNumber } = determineInvoiceContext(existingInvoices, orderId);
 
   const label = isFirstInvoice ? "first invoice" : `invoice #${sequenceNumber}`;
   console.log(`  This will be the ${label}`);

@@ -83,57 +83,48 @@ describe("validateOrder", () => {
 // --- determineInvoiceContext ---
 
 describe("determineInvoiceContext", () => {
-  it("detects first invoice when invoiceId is null", () => {
-    const b2bOrder = makeB2BOrder({ invoiceId: null });
-    const result = determineInvoiceContext(b2bOrder, [], 101);
+  it("detects first invoice when no existing invoices", () => {
+    const result = determineInvoiceContext([], 101);
     expect(result.isFirstInvoice).toBe(true);
     expect(result.sequenceNumber).toBe(1);
   });
 
-  it("detects first invoice when invoiceId is 0", () => {
-    const b2bOrder = makeB2BOrder({ invoiceId: 0 });
-    const result = determineInvoiceContext(b2bOrder, [], 101);
-    expect(result.isFirstInvoice).toBe(true);
-  });
-
-  it("detects subsequent invoice when invoiceId is set", () => {
-    const b2bOrder = makeB2BOrder({ invoiceId: 999 });
-    const result = determineInvoiceContext(b2bOrder, [], 101);
+  it("detects subsequent invoice when existing invoices match the order", () => {
+    const existing = [makeInvoiceListItem({ invoiceNumber: "INV-101-001" })];
+    const result = determineInvoiceContext(existing, 101);
     expect(result.isFirstInvoice).toBe(false);
+    expect(result.sequenceNumber).toBe(2);
   });
 
   it("returns sequenceNumber 1 when no existing invoices match", () => {
-    const b2bOrder = makeB2BOrder();
-    const result = determineInvoiceContext(b2bOrder, [], 101);
+    const result = determineInvoiceContext([], 101);
     expect(result.sequenceNumber).toBe(1);
   });
 
   it("returns sequenceNumber 2 when one existing invoice matches", () => {
-    const b2bOrder = makeB2BOrder({ invoiceId: 999 });
     const existing = [makeInvoiceListItem({ invoiceNumber: "INV-101-001" })];
-    const result = determineInvoiceContext(b2bOrder, existing, 101);
+    const result = determineInvoiceContext(existing, 101);
     expect(result.sequenceNumber).toBe(2);
   });
 
   it("returns sequenceNumber 3 when two existing invoices match", () => {
-    const b2bOrder = makeB2BOrder({ invoiceId: 999 });
     const existing = [
       makeInvoiceListItem({ invoiceNumber: "INV-101-001" }),
       makeInvoiceListItem({ invoiceNumber: "INV-101-002" }),
     ];
-    const result = determineInvoiceContext(b2bOrder, existing, 101);
+    const result = determineInvoiceContext(existing, 101);
     expect(result.sequenceNumber).toBe(3);
   });
 
   it("ignores invoices for other orders", () => {
-    const b2bOrder = makeB2BOrder({ invoiceId: 999 });
     const existing = [
       makeInvoiceListItem({ invoiceNumber: "INV-101-001" }),
       makeInvoiceListItem({ invoiceNumber: "INV-200-001" }),
       makeInvoiceListItem({ invoiceNumber: "INV-300-001" }),
     ];
-    const result = determineInvoiceContext(b2bOrder, existing, 101);
+    const result = determineInvoiceContext(existing, 101);
     expect(result.sequenceNumber).toBe(2);
+    expect(result.isFirstInvoice).toBe(false);
   });
 });
 

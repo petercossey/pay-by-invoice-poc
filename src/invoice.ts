@@ -23,26 +23,20 @@ export function validateOrder(b2bOrder: B2BOrder, orderId: number): void {
  * Determine whether this is the first invoice for the order and
  * what sequence number to use.
  *
- * - isFirstInvoice: true when the B2B order has no invoiceId yet
+ * - isFirstInvoice: true when no existing INV-{orderId}-* invoices exist
  * - sequenceNumber: count of existing INV-{orderId}-* invoices + 1
  */
 export function determineInvoiceContext(
-  b2bOrder: B2BOrder,
   existingInvoices: InvoiceListItem[],
   orderId: number,
 ): { isFirstInvoice: boolean; sequenceNumber: number } {
-  const isFirstInvoice =
-    b2bOrder.invoiceId === null ||
-    b2bOrder.invoiceId === undefined ||
-    b2bOrder.invoiceId === 0;
-
   const prefix = `INV-${orderId}-`;
   const existing = existingInvoices.filter((inv) =>
     inv.invoiceNumber.startsWith(prefix),
   );
 
   return {
-    isFirstInvoice,
+    isFirstInvoice: existing.length === 0,
     sequenceNumber: existing.length + 1,
   };
 }
