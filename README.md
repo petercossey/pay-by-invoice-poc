@@ -34,7 +34,7 @@ bun src/index.ts 101 200.00 --description "Progress payment"
 
 ## How it works
 
-The tool fetches order context from the BigCommerce v2 API and B2B API in parallel, then creates an invoice via the B2B Invoice API with `source: 1` (external). Each invoice contains a single line item at the specified amount.
+The tool fetches order context from the [BigCommerce v2 API](https://developer.bigcommerce.com/docs/store-operations/orders) and [B2B API](https://developer.bigcommerce.com/b2b-edition/apis/rest-management/order/orders) in parallel, then creates an invoice via the [B2B Invoice API](https://developer.bigcommerce.com/b2b-edition/apis/rest-management/invoice-management/invoice) with `source: 1` (external). Each invoice contains a single line item at the specified amount.
 
 The B2B Invoice API enforces a one-invoice-per-order constraint on the `orderNumber` field. To create multiple invoices against the same order, the first invoice uses `orderNumber` to link it in the B2B Edition UI, while subsequent invoices omit `orderNumber` and use `externalId` instead — maintaining traceability without triggering the constraint.
 

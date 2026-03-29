@@ -47,6 +47,7 @@ Three APIs are used in the workflow. Each serves a distinct purpose and has its 
 
 ### BigCommerce v2 Orders API
 
+- **Docs:** https://developer.bigcommerce.com/docs/store-operations/orders
 - **Purpose:** Retrieve order details including the total, currency, and billing address.
 - **Base URL:** `https://api.bigcommerce.com/stores/{storeHash}/v2`
 - **Authentication:** `X-Auth-Token` header with a BigCommerce API token that has read access to Orders.
@@ -56,6 +57,7 @@ This API provides the billing address (used to populate the invoice) and the ord
 
 ### B2B Edition Orders API
 
+- **Docs:** https://developer.bigcommerce.com/b2b-edition/apis/rest-management/order/orders
 - **Purpose:** Retrieve B2B-specific order metadata, most importantly the `companyId` that identifies the B2B buyer.
 - **Base URL:** `https://api-b2b.bigcommerce.com/api/v3/io`
 - **Authentication:** `X-Auth-Token` header with the same API token, plus an `X-Store-Hash` header identifying the store.
@@ -65,6 +67,7 @@ This API confirms the order belongs to a B2B company (required for invoicing) an
 
 ### B2B Edition Invoice API
 
+- **Docs:** https://developer.bigcommerce.com/b2b-edition/apis/rest-management/invoice-management/invoice
 - **Purpose:** List existing invoices and create new ones.
 - **Base URL:** `https://api-b2b.bigcommerce.com/api/v3/io/ip`
 - **Authentication:** Same as the B2B Orders API — `X-Auth-Token` and `X-Store-Hash` headers.
