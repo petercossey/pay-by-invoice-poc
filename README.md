@@ -2,6 +2,14 @@
 
 A CLI tool for BigCommerce B2B Edition that creates invoices for arbitrary amounts against B2B orders.
 
+## Disclaimer
+
+This program is provided as-is, without any warranties or guarantees of any kind, express or implied. It is intended as a proof of concept only. The authors accept no liability for any data loss or other damages resulting from its use.
+
+## AI Attribution
+
+Significant portions of this codebase were generated with the assistance of AI coding tools. While efforts have been made to verify the code's functionality, users should review and test thoroughly before use in any critical environments.
+
 ## Setup
 
 1. Copy `.env.example` to `.env` and fill in your credentials:
